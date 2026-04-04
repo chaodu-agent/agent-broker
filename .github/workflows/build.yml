@@ -38,6 +38,7 @@ jobs:
         variant:
           - { suffix: "", dockerfile: "Dockerfile" }
           - { suffix: "-codex", dockerfile: "Dockerfile.codex" }
+          - { suffix: "-claude", dockerfile: "Dockerfile.claude" }
         platform:
           - { os: linux/amd64, runner: ubuntu-latest }
           - { os: linux/arm64, runner: ubuntu-24.04-arm }
@@ -96,6 +97,7 @@ jobs:
         variant:
           - { suffix: "", name: "" }
           - { suffix: "-codex", name: "-codex" }
+          - { suffix: "-claude", name: "-claude" }
     runs-on: ubuntu-latest
     permissions:
       contents: read
