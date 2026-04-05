@@ -22,10 +22,6 @@ Agents deployed:
     Authenticate:
     kubectl exec -it deployment/{{ include "agent-broker.agentFullname" (dict "ctx" $ "agent" $name) }} -- gemini
 {{- end }}
-
-{{- if and $cfg.persistence $cfg.persistence.s3 $cfg.persistence.s3.enabled }}
-    S3 backup: s3://{{ $cfg.persistence.s3.bucket }}/{{ $cfg.persistence.s3.prefix }}
-{{- end }}
 {{- end }}
 
 Restart an agent after authentication:

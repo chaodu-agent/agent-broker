@@ -26,15 +26,9 @@ agents:
       enabled: true
       removeAfterReply: false
     persistence:
-      s3:
-        enabled: false
-        bucket: ""
-        prefix: "agents/kiro"
-        credentialsSecret: ""
-        endpoint: ""
-      paths:
-        - .kiro/settings
-        - .kiro/steering
+      enabled: true
+      storageClass: ""
+      size: 1Gi
     agentsMd: ""
     resources: {}
     nodeSelector: {}
