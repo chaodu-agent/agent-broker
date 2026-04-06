@@ -10,7 +10,7 @@ use serenity::prelude::*;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub struct Handler {
     pub pool: Arc<SessionPool>,
@@ -229,13 +229,28 @@ async fn stream_prompt(
                         if buf_rx.has_changed().unwrap_or(false) {
                             let content = buf_rx.borrow_and_update().clone();
                             if content != last_content {
+                                debug!(
+                                    content_len = content.len(),
+                                    edit_msg = %current_edit_msg,
+                                    "streaming tick: content changed"
+                                );
                                 if content.len() > 1900 {
                                     let chunks = format::split_message(&content, 1900);
+                                    debug!(
+                                        num_chunks = chunks.len(),
+                                        chunk_sizes = ?chunks.iter().map(|c| c.len()).collect::<Vec<_>>(),
+                                        "streaming tick: splitting long content"
+                                    );
                                     if let Some(first) = chunks.first() {
                                         let _ = edit(&ctx, channel, current_edit_msg, first).await;
                                     }
-                                    for chunk in chunks.iter().skip(1) {
+                                    for (idx, chunk) in chunks.iter().skip(1).enumerate() {
                                         if let Ok(new_msg) = channel.say(&ctx.http, chunk).await {
+                                            debug!(
+                                                chunk_idx = idx + 1,
+                                                new_msg_id = %new_msg.id,
+                                                "streaming tick: say() new chunk"
+                                            );
                                             current_edit_msg = new_msg.id;
                                         }
                                     }
@@ -303,10 +318,16 @@ async fn stream_prompt(
             };
 
             let chunks = format::split_message(&final_content, 2000);
+            debug!(
+                num_chunks = chunks.len(),
+                chunk_sizes = ?chunks.iter().map(|c| c.len()).collect::<Vec<_>>(),
+                "final edit: splitting content"
+            );
             for (i, chunk) in chunks.iter().enumerate() {
                 if i == 0 {
                     let _ = edit(&ctx, channel, current_msg_id, chunk).await;
                 } else {
+                    debug!(chunk_idx = i, "final edit: say() new chunk");
                     let _ = channel.say(&ctx.http, chunk).await;
                 }
             }
