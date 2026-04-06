@@ -28,6 +28,10 @@ spec:
         - name: agent-broker
           image: "{{ include "agent-broker.image.repository" . | trim }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: DISCORD_BOT_TOKEN
               valueFrom:

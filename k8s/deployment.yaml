@@ -25,6 +25,11 @@ spec:
         - name: agent-broker
           image: agent-broker:latest
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           env:
             - name: DISCORD_BOT_TOKEN
               valueFrom:

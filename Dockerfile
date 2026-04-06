@@ -14,20 +14,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then URL="https://desktop-release.q.us-east-1.amazonaws.com/latest/kirocli-aarch64-linux.zip"; \
     else URL="https://desktop-release.q.us-east-1.amazonaws.com/latest/kirocli-x86_64-linux.zip"; fi && \
-    curl --proto '=https' --tlsv1.2 -sSf "$URL" -o /tmp/kirocli.zip && \
+    curl --proto '=https' --tlsv1.2 -sSf --retry 3 --retry-delay 5 "$URL" -o /tmp/kirocli.zip && \
     unzip /tmp/kirocli.zip -d /tmp && \
     cp /tmp/kirocli/bin/* /usr/local/bin/ && \
     chmod +x /usr/local/bin/kiro-cli* && \
     rm -rf /tmp/kirocli /tmp/kirocli.zip
 
-RUN useradd -m -s /bin/bash agent
+RUN useradd -m -s /bin/bash -u 1000 agent
 RUN mkdir -p /home/agent/.local/share/kiro-cli /home/agent/.kiro && \
     chown -R agent:agent /home/agent
 ENV HOME=/home/agent
 WORKDIR /home/agent
 
-COPY --from=builder /build/target/release/agent-broker /usr/local/bin/agent-broker
+COPY --from=builder --chown=agent:agent /build/target/release/agent-broker /usr/local/bin/agent-broker
 
 USER agent
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD pgrep -x agent-broker || exit 1
 ENTRYPOINT ["agent-broker"]
 CMD ["/etc/agent-broker/config.toml"]
