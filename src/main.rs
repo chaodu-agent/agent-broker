@@ -43,16 +43,8 @@ async fn main() -> anyhow::Result<()> {
     let allowed_users = parse_id_set(&cfg.discord.allowed_users, "allowed_users")?;
     info!(channels = allowed_channels.len(), users = allowed_users.len(), "parsed allowlists");
 
-    let handler = discord::Handler {
-        pool: pool.clone(),
-        allowed_channels,
-        allowed_users,
-        reactions_config: cfg.reactions,
-        stt_config: cfg.stt.clone(),
-    };
-
+    // Resolve STT config before constructing handler (auto-detect mutates cfg.stt)
     if cfg.stt.enabled {
-        // Auto-detect GROQ_API_KEY from env if api_key not set and using default Groq endpoint
         if cfg.stt.api_key.is_empty() && cfg.stt.base_url.contains("groq.com") {
             if let Ok(key) = std::env::var("GROQ_API_KEY") {
                 if !key.is_empty() {
@@ -66,6 +58,14 @@ async fn main() -> anyhow::Result<()> {
         }
         info!(model = %cfg.stt.model, base_url = %cfg.stt.base_url, "STT enabled");
     }
+
+    let handler = discord::Handler {
+        pool: pool.clone(),
+        allowed_channels,
+        allowed_users,
+        reactions_config: cfg.reactions,
+        stt_config: cfg.stt.clone(),
+    };
 
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
