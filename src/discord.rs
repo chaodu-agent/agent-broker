@@ -1,5 +1,5 @@
 use crate::acp::{classify_notification, AcpEvent, ContentBlock, SessionPool};
-use crate::config::ReactionsConfig;
+use crate::config::{ReactionsConfig, SttConfig};
 use crate::error_display::{format_coded_error, format_user_error};
 use crate::format;
 use crate::reactions::StatusReactionController;
@@ -32,6 +32,7 @@ pub struct Handler {
     pub allowed_channels: HashSet<u64>,
     pub allowed_users: HashSet<u64>,
     pub reactions_config: ReactionsConfig,
+    pub stt_config: SttConfig,
 }
 
 #[async_trait]
@@ -132,12 +133,18 @@ impl EventHandler for Handler {
                 if let Some(content_block) = download_and_encode_image(attachment).await {
                     debug!(url = %attachment.url, filename = %attachment.filename, "adding image attachment");
                     content_blocks.push(content_block);
-                } else {
-                    error!(
-                        url = %attachment.url,
-                        filename = %attachment.filename,
-                        "failed to download image attachment"
-                    );
+                } else if is_audio_attachment(attachment) {
+                    // STT: transcribe audio attachments (voice messages)
+                    if self.stt_config.enabled {
+                        if let Some(transcript) = download_and_transcribe(attachment, &self.stt_config).await {
+                            debug!(filename = %attachment.filename, chars = transcript.len(), "voice transcript injected");
+                            content_blocks.insert(0, ContentBlock::Text {
+                                text: format!("[Voice message transcript]: {transcript}"),
+                            });
+                        }
+                    } else {
+                        debug!(filename = %attachment.filename, "skipping audio attachment (STT disabled)");
+                    }
                 }
             }
         }
@@ -233,6 +240,34 @@ impl EventHandler for Handler {
     async fn ready(&self, _ctx: Context, ready: Ready) {
         info!(user = %ready.user.name, "discord bot connected");
     }
+}
+
+/// Check if an attachment is an audio file (voice messages are typically audio/ogg).
+fn is_audio_attachment(attachment: &serenity::model::channel::Attachment) -> bool {
+    let mime = attachment.content_type.as_deref().unwrap_or("");
+    mime.starts_with("audio/")
+}
+
+/// Download an audio attachment and transcribe it via the configured STT provider.
+async fn download_and_transcribe(
+    attachment: &serenity::model::channel::Attachment,
+    stt_config: &SttConfig,
+) -> Option<String> {
+    const MAX_SIZE: u64 = 25 * 1024 * 1024; // 25 MB (Whisper API limit)
+
+    if u64::from(attachment.size) > MAX_SIZE {
+        error!(filename = %attachment.filename, size = attachment.size, "audio exceeds 25MB limit");
+        return None;
+    }
+
+    let resp = HTTP_CLIENT.get(&attachment.url).send().await.ok()?;
+    if !resp.status().is_success() {
+        error!(url = %attachment.url, status = %resp.status(), "audio download failed");
+        return None;
+    }
+    let bytes = resp.bytes().await.ok()?.to_vec();
+
+    crate::stt::transcribe(stt_config, bytes, attachment.filename.clone()).await
 }
 
 /// Maximum dimension (width or height) for resized images.

@@ -4,6 +4,7 @@ mod discord;
 mod error_display;
 mod format;
 mod reactions;
+mod stt;
 
 use serenity::prelude::*;
 use std::collections::HashSet;
@@ -47,7 +48,12 @@ async fn main() -> anyhow::Result<()> {
         allowed_channels,
         allowed_users,
         reactions_config: cfg.reactions,
+        stt_config: cfg.stt.clone(),
     };
+
+    if cfg.stt.enabled {
+        info!(model = %cfg.stt.model, base_url = %cfg.stt.base_url, "STT enabled");
+    }
 
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
