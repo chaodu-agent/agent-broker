@@ -5,6 +5,8 @@ use crate::format;
 use crate::reactions::StatusReactionController;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use image::ImageReader;
+use std::io::Cursor;
 use std::sync::LazyLock;
 use serenity::async_trait;
 use serenity::model::channel::{Message, ReactionType};
@@ -233,14 +235,20 @@ impl EventHandler for Handler {
     }
 }
 
-/// Download a Discord image attachment and encode it as an ACP image content block.
+/// Maximum dimension (width or height) for resized images.
+/// Matches OpenClaw's DEFAULT_IMAGE_MAX_DIMENSION_PX.
+const IMAGE_MAX_DIMENSION_PX: u32 = 1200;
+
+/// JPEG quality for compressed output (OpenClaw uses progressive 85→35;
+/// we start at 75 which is a good balance of quality vs size).
+const IMAGE_JPEG_QUALITY: u8 = 75;
+
+/// Download a Discord image attachment, resize/compress it, then base64-encode
+/// as an ACP image content block.
 ///
-/// Discord attachment URLs are temporary and expire, so we must download
-/// and encode the image data immediately. The ACP ImageContent schema
-/// requires `{ data: base64_string, mimeType: "image/..." }`.
-///
-/// Security: rejects non-image attachments (by content-type or extension)
-/// and files larger than 10MB to prevent OOM/abuse.
+/// Large images are resized so the longest side is at most 1200px and
+/// re-encoded as JPEG at quality 75. This keeps the base64 payload well
+/// under typical JSON-RPC transport limits (~200-400KB after encoding).
 async fn download_and_encode_image(attachment: &serenity::model::channel::Attachment) -> Option<ContentBlock> {
     const MAX_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
 
@@ -267,67 +275,91 @@ async fn download_and_encode_image(attachment: &serenity::model::channel::Attach
                 })
         });
 
-    // Validate that it's actually an image
     let Some(mime) = media_type else {
-        debug!(filename = %attachment.filename, "skipping non-image attachment (no matching content-type or extension)");
+        debug!(filename = %attachment.filename, "skipping non-image attachment");
         return None;
     };
-    // Strip MIME type parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
-    // Downstream LLM APIs (Claude, OpenAI, Gemini) reject MIME types with parameters
     let mime = mime.split(';').next().unwrap_or(mime).trim();
     if !mime.starts_with("image/") {
         debug!(filename = %attachment.filename, mime = %mime, "skipping non-image attachment");
         return None;
     }
 
-    // Size check before downloading
     if u64::from(attachment.size) > MAX_SIZE {
-        error!(
-            filename = %attachment.filename,
-            size = attachment.size,
-            max = MAX_SIZE,
-            "image attachment exceeds 10MB limit"
-        );
+        error!(filename = %attachment.filename, size = attachment.size, "image exceeds 10MB limit");
         return None;
     }
 
-    // Download using the static reusable client
     let response = match HTTP_CLIENT.get(url).send().await {
         Ok(resp) => resp,
-        Err(e) => {
-            error!("failed to download image {}: {}", url, e);
-            return None;
-        }
+        Err(e) => { error!("download failed {url}: {e}"); return None; }
     };
-
     if !response.status().is_success() {
-        error!("HTTP error downloading image {}: {}", url, response.status());
+        error!("HTTP {}: {url}", response.status());
         return None;
     }
-
     let bytes = match response.bytes().await {
         Ok(b) => b,
+        Err(e) => { error!("read failed {url}: {e}"); return None; }
+    };
+
+    // Resize and compress
+    let (output_bytes, output_mime) = match resize_and_compress(&bytes) {
+        Ok(result) => result,
         Err(e) => {
-            error!("failed to read image bytes from {}: {}", url, e);
-            return None;
+            debug!(filename = %attachment.filename, error = %e, "resize failed, using original");
+            (bytes.to_vec(), mime.to_string())
         }
     };
 
-    // Final size check after download (defense in depth)
-    if bytes.len() as u64 > MAX_SIZE {
-        error!(
-            filename = %attachment.filename,
-            size = bytes.len(),
-            "downloaded image exceeds 10MB limit after decode"
-        );
-        return None;
-    }
+    debug!(
+        filename = %attachment.filename,
+        original_size = bytes.len(),
+        compressed_size = output_bytes.len(),
+        "image processed"
+    );
 
-    let encoded = BASE64.encode(bytes.as_ref());
+    let encoded = BASE64.encode(&output_bytes);
     Some(ContentBlock::Image {
-        media_type: mime.to_string(),
+        media_type: output_mime,
         data: encoded,
     })
+}
+
+/// Resize image so longest side ≤ IMAGE_MAX_DIMENSION_PX, then encode as JPEG.
+/// Returns (compressed_bytes, mime_type). GIFs are passed through unchanged
+/// to preserve animation.
+fn resize_and_compress(raw: &[u8]) -> Result<(Vec<u8>, String), image::ImageError> {
+    let reader = ImageReader::new(Cursor::new(raw))
+        .with_guessed_format()?;
+
+    let format = reader.format();
+
+    // Pass through GIFs unchanged to preserve animation
+    if format == Some(image::ImageFormat::Gif) {
+        return Ok((raw.to_vec(), "image/gif".to_string()));
+    }
+
+    let img = reader.decode()?;
+    let (w, h) = (img.width(), img.height());
+
+    // Resize if either dimension exceeds the limit
+    let img = if w > IMAGE_MAX_DIMENSION_PX || h > IMAGE_MAX_DIMENSION_PX {
+        img.resize(
+            IMAGE_MAX_DIMENSION_PX,
+            IMAGE_MAX_DIMENSION_PX,
+            image::imageops::FilterType::Lanczos3,
+        )
+    } else {
+        img
+    };
+
+    // Encode as JPEG
+    let mut buf = Cursor::new(Vec::new());
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, IMAGE_JPEG_QUALITY);
+    img.write_with_encoder(encoder)?;
+
+    Ok((buf.into_inner(), "image/jpeg".to_string()))
 }
 
 async fn edit(ctx: &Context, ch: ChannelId, msg_id: MessageId, content: &str) -> serenity::Result<Message> {
