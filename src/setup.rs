@@ -1,7 +1,7 @@
 //! Interactive setup wizard for OpenAB.
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Color codes (ANSI)
@@ -149,7 +149,7 @@ fn print_box(lines: &[&str]) {
         .map(|l| unicode_width::UnicodeWidthStr::width(&**l))
         .max()
         .unwrap_or(60);
-    let width = width.max(60).min(76);
+    let width = width.clamp(60, 76);
     println!();
     cprintln!(C.cyan, "{}", "╔".to_string() + &"═".repeat(width + 2) + "╗");
     for line in lines {
@@ -615,11 +615,11 @@ fn section_preview_and_save(config_content: &str, output_path: &PathBuf) -> anyh
     println!("{}", mask_bot_token(config_content));
     println!();
 
-    if output_path.exists() {
-        if !prompt_yes_no("  File exists. Overwrite?", false) {
-            println!("  Saving cancelled.");
-            return Ok(());
-        }
+    if output_path.exists()
+        && !prompt_yes_no("  File exists. Overwrite?", false)
+    {
+        println!("  Saving cancelled.");
+        return Ok(());
     }
 
     std::fs::write(output_path, config_content)?;
@@ -762,7 +762,7 @@ pub fn run_setup(output_path: Option<PathBuf>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_next_steps(agent: &str, output_path: &PathBuf, is_local: bool) {
+fn print_next_steps(agent: &str, output_path: &Path, is_local: bool) {
     println!();
     cprintln!(C.bold, "--- Next Steps ---");
     println!();
