@@ -26,6 +26,12 @@ working_dir = "/home/agent"
 # working_dir = "/home/agent"
 # env = { GEMINI_API_KEY = "${GEMINI_API_KEY}" }
 
+# [agent]
+# command = "copilot"
+# args = ["--acp", "--stdio"]
+# working_dir = "/home/agent"
+# env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+
 [pool]
 max_sessions = 10
 session_ttl_hours = 24
