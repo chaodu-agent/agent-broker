@@ -25,6 +25,7 @@ OpenAB spawns `copilot --acp --stdio` as a child process and communicates via st
 command = "copilot"
 args = ["--acp", "--stdio"]
 working_dir = "/home/agent"
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }  # ⚠️ unvalidated — use device flow instead
 ```
 
 ## Docker
