@@ -30,7 +30,7 @@ working_dir = "/home/agent"
 # command = "copilot"
 # args = ["--acp", "--stdio"]
 # working_dir = "/home/agent"
-# env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+# env = {}  # Auth via: kubectl exec -it <pod> -- gh auth login -p https -w
 
 [pool]
 max_sessions = 10

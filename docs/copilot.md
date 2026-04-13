@@ -4,7 +4,7 @@ How to run OpenAB with [GitHub Copilot CLI](https://github.com/github/copilot-cl
 
 ## Prerequisites
 
-- An active [GitHub Copilot](https://github.com/features/copilot/plans) subscription (Free, Pro, Pro+, Business, or Enterprise)
+- A paid [GitHub Copilot](https://github.com/features/copilot/plans) subscription (**Pro, Pro+, Business, or Enterprise** — Free tier does not include CLI/ACP access)
 - Copilot CLI ACP support is in [public preview](https://github.blog/changelog/2026-01-28-acp-support-in-copilot-cli-is-now-in-public-preview/) since Jan 28, 2026
 
 ## Architecture
@@ -25,7 +25,7 @@ OpenAB spawns `copilot --acp --stdio` as a child process and communicates via st
 command = "copilot"
 args = ["--acp", "--stdio"]
 working_dir = "/home/agent"
-env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }  # ⚠️ unvalidated — use device flow instead
+# Auth via: kubectl exec -it <pod> -- gh auth login -p https -w
 ```
 
 ## Docker
@@ -62,6 +62,8 @@ The OAuth token is stored under `~/.config/gh/` and persisted across pod restart
 
 ## Helm Install
 
+> **Note**: The `ghcr.io/openabdev/openab-copilot` image is not published yet. You must build it locally first with `docker build -f Dockerfile.copilot -t openab-copilot .` and push to your own registry, or use a local image.
+
 ```bash
 helm install openab openab/openab \
   --set agents.kiro.enabled=false \
@@ -70,6 +72,7 @@ helm install openab openab/openab \
   --set agents.copilot.image=ghcr.io/openabdev/openab-copilot:latest \
   --set agents.copilot.command=copilot \
   --set 'agents.copilot.args={--acp,--stdio}' \
+  --set agents.copilot.persistence.enabled=true \
   --set agents.copilot.workingDir=/home/node
 ```
 
