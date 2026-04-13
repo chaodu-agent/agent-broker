@@ -1,5 +1,10 @@
 # OpenAB Version Upgrade SOP
 
+| | |
+|---|---|
+| **Document Version** | 1.1 |
+| **Last Updated** | 2026-04-13 |
+
 ## Environment Reference
 
 | Item | Details |
@@ -111,7 +116,22 @@ helm search repo openab --versions
   - Added or deprecated environment variables
   - Any migration steps
 
-### 3. Announce the Upgrade
+### 3. Check Node Resources
+
+> Skipping this step risks the new Pod getting stuck in `Pending` if the node lacks capacity.
+
+```bash
+# Check allocatable resources on all nodes
+kubectl describe nodes | grep -A 5 "Allocatable:"
+
+# Check current resource requests across the cluster
+kubectl top nodes
+
+# Confirm the new image size has not changed significantly
+# (check the release notes for any resource requirement changes)
+```
+
+### 4. Announce the Upgrade
 
 > ⚠️ **Downtime is expected during every upgrade.** The deployment strategy is `Recreate` because the PVC is ReadWriteOnce, which does not support RollingUpdate. The old Pod is terminated before the new one starts — the Discord bot will be unavailable during this window, and this is expected behaviour.
 
@@ -133,6 +153,7 @@ helm search repo openab --versions
 | Steering files | `kubectl cp $POD:/home/agent/.kiro/steering/ ./backup-steering/` | Steering docs such as IDENTITY.md |
 | Skills | `kubectl cp $POD:/home/agent/.kiro/skills/ ./backup-skills/` | Custom agent skills (if any; skip if path does not exist) |
 | hosts.yml | `kubectl cp $POD:/home/agent/.config/gh/hosts.yml ./backup-hosts.yml` | GitHub CLI credentials (including multi-account configs) |
+| Full Secret export | `kubectl get secret openab-kiro -o yaml > ./backup-secret.yaml` | Full Secret dump including Discord token, STT key, etc. — store securely |
 | STT API Key | `kubectl get secret openab-kiro -o jsonpath='{.data.stt-api-key}' \| base64 -d > ./backup-stt-api-key.txt` | Required only if STT is enabled (`stt.enabled: true`) |
 | PVC data | See "PVC Backup" section below | Persistent data mounted to the Pod (⚠️ manual step required) |
 | Helm release history | `helm history openab > openab-helm-history-$(date +%Y%m%d).txt` | Useful reference for rollback |
@@ -141,7 +162,11 @@ helm search repo openab --versions
 
 ```bash
 #!/bin/bash
-set -e
+# Note: set -e is intentionally omitted.
+# Error handling is done explicitly per step via backup_step()
+# to avoid set -e interfering with the if ! "$@" pattern inside functions.
+
+export KUBECONFIG=~/.kube/config
 
 BACKUP_DIR="openab-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
@@ -149,6 +174,13 @@ mkdir -p "$BACKUP_DIR"
 POD=$(kubectl get pod -l app.kubernetes.io/instance=openab -o jsonpath='{.items[0].metadata.name}')
 if [ -z "$POD" ]; then
   echo "❌ OpenAB Pod not found. Aborting backup." && exit 1
+fi
+
+# Pre-check: kubectl cp directory operations require tar inside the container
+if ! kubectl exec "$POD" -- which tar > /dev/null 2>&1; then
+  echo "❌ tar not found in container. kubectl cp of directories will fail."
+  echo "   Use 'kubectl exec' with a tar pipe instead, or use VolumeSnapshot for PVC backup."
+  exit 1
 fi
 
 backup_step() {
@@ -159,15 +191,18 @@ backup_step() {
   fi
 }
 
-backup_step "Backup Helm values"   bash -c "helm get values openab -o yaml > $BACKUP_DIR/values.yaml"
-backup_step "Backup Agent config"  kubectl cp "$POD:/home/agent/.kiro/agents/" "$BACKUP_DIR/agents/"
+backup_step "Backup Helm values"    bash -c "helm get values openab -o yaml > $BACKUP_DIR/values.yaml"
+backup_step "Backup Agent config"   kubectl cp "$POD:/home/agent/.kiro/agents/" "$BACKUP_DIR/agents/"
 backup_step "Backup Steering files" kubectl cp "$POD:/home/agent/.kiro/steering/" "$BACKUP_DIR/steering/"
-kubectl cp "$POD:/home/agent/.kiro/skills/" "$BACKUP_DIR/skills/" 2>/dev/null || echo "⚠️ skills/ directory not found, skipping"
-backup_step "Backup hosts.yml"     kubectl cp "$POD:/home/agent/.config/gh/hosts.yml" "$BACKUP_DIR/hosts.yml"
-backup_step "Backup Helm history"  bash -c "helm history openab > $BACKUP_DIR/helm-history.txt"
+kubectl cp "$POD:/home/agent/.kiro/skills/" "$BACKUP_DIR/skills/" 2>/dev/null \
+  || echo "⚠️ skills/ directory not found, skipping"
+backup_step "Backup hosts.yml"      kubectl cp "$POD:/home/agent/.config/gh/hosts.yml" "$BACKUP_DIR/hosts.yml"
+backup_step "Backup full Secret"    bash -c "kubectl get secret openab-kiro -o yaml > $BACKUP_DIR/secret.yaml"
+backup_step "Backup Helm history"   bash -c "helm history openab > $BACKUP_DIR/helm-history.txt"
 
 echo "=== ✅ Backup complete: $BACKUP_DIR ==="
 ls -la "$BACKUP_DIR/"
+echo "⚠️  secret.yaml contains sensitive credentials — store it securely and do not commit it."
 ```
 
 ### Verify the Backup
@@ -225,6 +260,8 @@ helm show chart oci://ghcr.io/openabdev/charts/openab --version <target-version>
 ### Step 1: Pre-release Validation (Required)
 
 > ⚠️ Per project convention, **a stable release must be preceded by a validated pre-release**. Do not skip directly to Step 2.
+>
+> **When can Step 1 be skipped?** Only if the maintainer explicitly states that the stable release was promoted directly from a pre-release that was already validated in another environment (e.g. a staging cluster). In all other cases, run Step 1 first.
 
 ```bash
 BACKUP_VALUES="<backup-dir>/values.yaml"  # e.g. openab-backup-20260413-070000/values.yaml
@@ -369,7 +406,11 @@ POD=$(kubectl get pod -l app.kubernetes.io/instance=openab -o jsonpath='{.items[
 kubectl cp ./backup-default.json $POD:/home/agent/.kiro/agents/default.json
 
 # Restore steering files
-kubectl cp ./backup-steering/ $POD:/home/agent/.kiro/steering/
+# ⚠️ kubectl cp directory behaviour varies across versions — trailing slash matters.
+# Use the tar pipe method below to avoid accidentally creating a nested directory
+# (e.g. steering/steering/) which can happen with some kubectl versions.
+kubectl exec $POD -- mkdir -p /home/agent/.kiro/steering
+tar c -C ./backup-steering . | kubectl exec -i $POD -- tar x -C /home/agent/.kiro/steering
 
 # Restore GitHub CLI credentials
 kubectl cp ./backup-hosts.yml $POD:/home/agent/.config/gh/hosts.yml
