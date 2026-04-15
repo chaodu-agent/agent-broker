@@ -130,7 +130,9 @@ impl EventHandler for Handler {
         // Process attachments: route by content type (audio → STT, text file → inline, image → encode)
         if !msg.attachments.is_empty() {
             let mut text_file_bytes: u64 = 0;
+            let mut text_file_count: u32 = 0;
             const TEXT_TOTAL_CAP: u64 = 1024 * 1024; // 1 MB total for all text file attachments
+            const TEXT_FILE_COUNT_CAP: u32 = 5;
 
             for attachment in &msg.attachments {
                 if is_audio_attachment(attachment) {
@@ -145,12 +147,19 @@ impl EventHandler for Handler {
                         debug!(filename = %attachment.filename, "skipping audio attachment (STT disabled)");
                     }
                 } else if is_text_attachment(attachment) {
+                    if text_file_count >= TEXT_FILE_COUNT_CAP {
+                        warn!(filename = %attachment.filename, count = text_file_count, "text file count cap reached, skipping");
+                        continue;
+                    }
+                    // Pre-check with Discord-reported size (fast path, avoids unnecessary download).
+                    // Running total uses actual downloaded bytes for accurate accounting.
                     if text_file_bytes + u64::from(attachment.size) > TEXT_TOTAL_CAP {
                         warn!(filename = %attachment.filename, total = text_file_bytes, "text attachments total exceeds 1MB cap, skipping remaining");
                         continue;
                     }
-                    if let Some(content_block) = download_and_read_text_file(attachment).await {
-                        text_file_bytes += u64::from(attachment.size);
+                    if let Some((content_block, actual_bytes)) = download_and_read_text_file(attachment).await {
+                        text_file_bytes += actual_bytes;
+                        text_file_count += 1;
                         debug!(filename = %attachment.filename, "adding text file attachment");
                         content_blocks.push(content_block);
                     }
@@ -273,7 +282,6 @@ const TEXT_MIME_TYPES: &[&str] = &[
     "application/json",
     "application/xml",
     "application/javascript",
-    "application/typescript",
     "application/x-yaml",
     "application/x-sh",
     "application/toml",
@@ -303,7 +311,7 @@ fn is_text_attachment(attachment: &serenity::model::channel::Attachment) -> bool
 /// Files larger than 512 KB are skipped to avoid bloating the prompt.
 async fn download_and_read_text_file(
     attachment: &serenity::model::channel::Attachment,
-) -> Option<ContentBlock> {
+) -> Option<(ContentBlock, u64)> {
     const MAX_SIZE: u64 = 512 * 1024; // 512 KB
 
     if u64::from(attachment.size) > MAX_SIZE {
@@ -317,24 +325,27 @@ async fn download_and_read_text_file(
         return None;
     }
     let bytes = resp.bytes().await.ok()?;
+    let actual_size = bytes.len() as u64;
 
     // Defense-in-depth: verify actual download size
-    if bytes.len() as u64 > MAX_SIZE {
-        warn!(filename = %attachment.filename, size = bytes.len(), "downloaded text file exceeds 512KB limit, skipping");
+    if actual_size > MAX_SIZE {
+        warn!(filename = %attachment.filename, size = actual_size, "downloaded text file exceeds 512KB limit, skipping");
         return None;
     }
 
-    let text = String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| {
-        String::from_utf8_lossy(&bytes).into_owned()
-    });
+    // from_utf8_lossy returns Cow::Borrowed for valid UTF-8 (zero-copy)
+    let text = String::from_utf8_lossy(&bytes).into_owned();
 
-    // Use enough backticks to avoid conflicts with content that contains triple backticks
-    let fence = if text.contains("```") { "````" } else { "```" };
+    // Dynamic fence: keep adding backticks until the fence doesn't appear in content
+    let mut fence = "```".to_string();
+    while text.contains(fence.as_str()) {
+        fence.push('`');
+    }
 
-    debug!(filename = %attachment.filename, chars = text.len(), "text file inlined");
-    Some(ContentBlock::Text {
+    debug!(filename = %attachment.filename, bytes = text.len(), "text file inlined");
+    Some((ContentBlock::Text {
         text: format!("[File: {}]\n{fence}\n{}\n{fence}", attachment.filename, text),
-    })
+    }, actual_size))
 }
 
 /// Check if an attachment is an audio file (voice messages are typically audio/ogg).
