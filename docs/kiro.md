@@ -74,3 +74,15 @@ Sends a `session/cancel` JSON-RPC notification to abort in-flight LLM requests a
 **Note:** All slash commands only work in threads where a conversation is already active. If no session exists, they will prompt the user to start one first.
 
 See [docs/slash-commands.md](slash-commands.md) for full details.
+
+## Built-in Kiro CLI Commands
+
+All built-in kiro-cli slash commands can be passed directly after an @mention:
+
+```
+@MyBot /compact
+@MyBot /clear
+@MyBot /model claude-sonnet-4
+```
+
+These are forwarded as-is to the kiro-cli ACP session as a prompt. Any command that kiro-cli supports in its interactive mode works here.
