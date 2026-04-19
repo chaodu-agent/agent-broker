@@ -13,6 +13,9 @@ use tracing::{info, warn};
 struct PoolState {
     /// Active connections: thread_key → AcpConnection handle.
     active: HashMap<String, Arc<Mutex<AcpConnection>>>,
+    /// Lock-free cancel handles: thread_key → (stdin, session_id).
+    /// Stored separately so cancel can work without locking the connection.
+    cancel_handles: HashMap<String, (Arc<tokio::sync::Mutex<tokio::process::ChildStdin>>, String)>,
     /// Suspended sessions: thread_key → ACP sessionId.
     /// Saved on eviction so sessions can be resumed via `session/load`.
     suspended: HashMap<String, String>,
@@ -63,6 +66,7 @@ impl SessionPool {
         Self {
             state: RwLock::new(PoolState {
                 active: HashMap::new(),
+                cancel_handles: HashMap::new(),
                 suspended: HashMap::new(),
                 creating: HashMap::new(),
             }),
@@ -164,6 +168,8 @@ impl SessionPool {
             }
         }
 
+        let cancel_handle = new_conn.cancel_handle();
+        let cancel_session_id = new_conn.acp_session_id.clone().unwrap_or_default();
         let new_conn = Arc::new(Mutex::new(new_conn));
 
         let mut state = self.state.write().await;
@@ -207,6 +213,9 @@ impl SessionPool {
 
         state.suspended.remove(thread_id);
         state.active.insert(thread_id.to_string(), new_conn);
+        if !cancel_session_id.is_empty() {
+            state.cancel_handles.insert(thread_id.to_string(), (cancel_handle, cancel_session_id));
+        }
         Ok(())
     }
 
@@ -262,22 +271,25 @@ impl SessionPool {
     }
 
     /// Cancel the current in-flight operation for a session.
+    /// Uses pre-stored cancel handles to avoid locking the connection (which is held during streaming).
     pub async fn cancel_session(&self, thread_id: &str) -> Result<()> {
-        let conn = {
+        let (stdin, session_id) = {
             let state = self.state.read().await;
-            state.active.get(thread_id).cloned()
+            state.cancel_handles.get(thread_id).cloned()
                 .ok_or_else(|| anyhow!("no session for thread {thread_id}"))?
         };
-        let conn = conn.lock().await;
-        let session_id = conn.acp_session_id.as_ref()
-            .ok_or_else(|| anyhow!("no active session"))?;
         let data = serde_json::to_string(&serde_json::json!({
             "jsonrpc": "2.0",
             "method": "session/cancel",
             "params": {"sessionId": session_id}
         }))?;
         tracing::info!(session_id, "sending session/cancel");
-        conn.send_raw(&data).await
+        use tokio::io::AsyncWriteExt;
+        let mut w = stdin.lock().await;
+        w.write_all(data.as_bytes()).await?;
+        w.write_all(b"\n").await?;
+        w.flush().await?;
+        Ok(())
     }
 
     pub async fn cleanup_idle(&self, ttl_secs: u64) {

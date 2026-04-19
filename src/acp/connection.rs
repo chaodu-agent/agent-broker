@@ -438,6 +438,11 @@ impl AcpConnection {
         self.last_active = Instant::now();
     }
 
+    /// Return a clone of the stdin handle for lock-free cancel.
+    pub fn cancel_handle(&self) -> Arc<Mutex<ChildStdin>> {
+        Arc::clone(&self.stdin)
+    }
+
     pub fn alive(&self) -> bool {
         !self._reader_handle.is_finished()
     }
