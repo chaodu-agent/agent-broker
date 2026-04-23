@@ -112,7 +112,7 @@ Session pool settings for managing concurrent agent sessions.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `max_sessions` | usize | `10` | Maximum number of concurrent agent sessions. |
-| `session_ttl_hours` | u64 | `4` | Session time-to-live in hours. Idle sessions are reclaimed after this period. |
+| `session_ttl_hours` | u64 | `4` | Session time-to-live in hours. Idle sessions are reclaimed after this period. The example config uses `24`. |
 
 ---
 
@@ -160,9 +160,9 @@ Speech-to-text transcription for voice messages. Uses an OpenAI-compatible `/aud
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `false` | Enable voice message transcription. |
-| `api_key` | string | `""` | API key for the STT service. |
+| `api_key` | string | `""` | API key for the STT service. When empty and `base_url` contains `groq.com`, the `GROQ_API_KEY` environment variable is used automatically. For local servers, use `api_key = "not-needed"`. |
 | `model` | string | `"whisper-large-v3-turbo"` | Model name to use for transcription. |
-| `base_url` | string | `"https://api.groq.com/openai/v1"` | Base URL of the STT API. |
+| `base_url` | string | `"https://api.groq.com/openai/v1"` | Base URL of the STT API. Any OpenAI-compatible `/audio/transcriptions` endpoint works. |
 
 ---
 
