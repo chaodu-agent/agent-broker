@@ -113,6 +113,20 @@ export DISCORD_BOT_TOKEN="your-token"
 cargo run
 ```
 
+### Remote Config
+
+You can also load config directly from a URL:
+
+```bash
+# Auto-detected by http:// or https:// prefix
+openab https://example.com/config.toml
+
+# Or explicitly with the run subcommand
+openab run https://example.com/config.toml
+```
+
+This is useful for containerized or multi-node deployments where config is hosted on a central server (e.g. S3, Git raw URL, internal HTTP service).
+
 ## Configuration Reference
 
 > 📖 Full reference with all options, defaults, and Helm mapping: [docs/config-reference.md](docs/config-reference.md)

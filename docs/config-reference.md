@@ -4,6 +4,20 @@ OpenAB is configured via a TOML file (default: `config.toml`). Environment varia
 
 At least one adapter section (`[discord]` or `[slack]`) is required.
 
+## Loading Config
+
+Config can be loaded from a local file or a remote URL:
+
+```bash
+# Local file (default: config.toml)
+openab config.toml
+
+# Remote URL (auto-detected by http:// or https:// prefix)
+openab https://example.com/config.toml
+```
+
+Remote config is fetched via HTTP GET with a 10-second timeout. Environment variable expansion (`${VAR}`) works identically on both local and remote config content.
+
 ---
 
 ## `[discord]`
