@@ -13,8 +13,12 @@
 //   { "action": "send",   "to": "...", "text": "...", "ack_id": "..." }
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 const { Boom } = require('@hapi/boom');
 const path = require('path');
+
+// Silent logger — prevent Baileys' pino from writing to stdout (reserved for protocol)
+const logger = pino({ level: 'silent' });
 
 const SESSION_DIR = process.env.WHATSAPP_SESSION_DIR || path.join(__dirname, '.whatsapp-session');
 const RECONNECT_MS = 3000;
@@ -38,6 +42,7 @@ async function connect() {
   const sock = makeWASocket({
     version,
     auth: state,
+    logger,
     printQRInTerminal: false,
     generateHighQualityLinkPreview: false,
   });
