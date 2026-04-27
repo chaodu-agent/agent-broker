@@ -6,10 +6,11 @@
 //   { "type": "qr",      "data": "<qr-string>" }
 //   { "type": "ready",    "data": { "id": "...", "name": "..." } }
 //   { "type": "message",  "data": { "from": "...", "pushName": "...", "text": "...", "messageId": "...", "isGroup": false, "participant": null } }
+//   { "type": "ack",      "data": { "ack_id": "...", "success": true/false, "error": "..." } }
 //   { "type": "close",    "data": { "reason": "..." } }
 //
 // Outbound (Rust → stdin):
-//   { "action": "send",   "to": "...", "text": "..." }
+//   { "action": "send",   "to": "...", "text": "...", "ack_id": "..." }
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
@@ -92,13 +93,23 @@ async function connect() {
 const readline = require('readline');
 const rl = readline.createInterface({ input: process.stdin });
 rl.on('line', async (line) => {
+  let cmd;
   try {
-    const cmd = JSON.parse(line);
-    if (cmd.action === 'send' && currentSock) {
-      await currentSock.sendMessage(cmd.to, { text: cmd.text });
-    }
+    cmd = JSON.parse(line);
   } catch (e) {
     process.stderr.write(`bridge error: ${e.message}\n`);
+    return;
+  }
+  if (cmd.action === 'send') {
+    const ackId = cmd.ack_id || null;
+    try {
+      if (!currentSock) throw new Error('not connected');
+      await currentSock.sendMessage(cmd.to, { text: cmd.text });
+      if (ackId) emit('ack', { ack_id: ackId, success: true });
+    } catch (e) {
+      process.stderr.write(`bridge send error: ${e.message}\n`);
+      if (ackId) emit('ack', { ack_id: ackId, success: false, error: e.message });
+    }
   }
 });
 rl.on('close', () => {

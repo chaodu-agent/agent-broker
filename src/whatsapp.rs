@@ -35,17 +35,37 @@ struct WhatsAppMessage {
 
 pub struct WhatsAppAdapter {
     stdin_tx: Mutex<tokio::process::ChildStdin>,
+    pending_acks:
+        Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<SendAck>>>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SendAck {
+    ack_id: String,
+    success: bool,
+    #[serde(default)]
+    error: Option<String>,
 }
 
 impl WhatsAppAdapter {
-    fn new(stdin: tokio::process::ChildStdin) -> Self {
+    fn new(
+        stdin: tokio::process::ChildStdin,
+        pending_acks: Arc<
+            Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<SendAck>>>,
+        >,
+    ) -> Self {
         Self {
             stdin_tx: Mutex::new(stdin),
+            pending_acks,
         }
     }
 
     async fn send_command(&self, to: &str, text: &str) -> Result<()> {
-        let cmd = serde_json::json!({ "action": "send", "to": to, "text": text });
+        let ack_id = format!("ack_{}", uuid::Uuid::new_v4());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending_acks.lock().await.insert(ack_id.clone(), tx);
+
+        let cmd = serde_json::json!({ "action": "send", "to": to, "text": text, "ack_id": ack_id });
         let mut line = serde_json::to_string(&cmd)?;
         line.push('\n');
         self.stdin_tx
@@ -54,7 +74,22 @@ impl WhatsAppAdapter {
             .write_all(line.as_bytes())
             .await
             .context("failed to write to baileys bridge stdin")?;
-        Ok(())
+
+        // Wait for ack with timeout
+        match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
+            Ok(Ok(ack)) if ack.success => Ok(()),
+            Ok(Ok(ack)) => {
+                anyhow::bail!(
+                    "WhatsApp send failed: {}",
+                    ack.error.unwrap_or_else(|| "unknown".into())
+                )
+            }
+            Ok(Err(_)) => anyhow::bail!("WhatsApp bridge closed before ack"),
+            Err(_) => {
+                self.pending_acks.lock().await.remove(&ack_id);
+                anyhow::bail!("WhatsApp send timed out (10s)")
+            }
+        }
     }
 }
 
@@ -155,7 +190,11 @@ pub async fn run_whatsapp_adapter(
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
 
-        let adapter: Arc<dyn ChatAdapter> = Arc::new(WhatsAppAdapter::new(stdin));
+        let pending_acks: Arc<
+            Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<SendAck>>>,
+        > = Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let adapter: Arc<dyn ChatAdapter> =
+            Arc::new(WhatsAppAdapter::new(stdin, pending_acks.clone()));
         let mut reader = BufReader::new(stdout).lines();
         let mut err_reader = BufReader::new(stderr).lines();
 
@@ -263,6 +302,13 @@ pub async fn run_whatsapp_adapter(
                                     warn!(reason, "baileys bridge connection closed");
                                     if reason == "logged_out" {
                                         error!("WhatsApp session logged out — re-scan QR code");
+                                    }
+                                }
+                                "ack" => {
+                                    if let Ok(ack) = serde_json::from_value::<SendAck>(event.data) {
+                                        if let Some(tx) = pending_acks.lock().await.remove(&ack.ack_id) {
+                                            let _ = tx.send(ack);
+                                        }
                                     }
                                 }
                                 _ => {}
@@ -419,5 +465,24 @@ mod tests {
     fn missing_bridge_script_detected() {
         let path = std::path::Path::new("/nonexistent/baileys-bridge.js");
         assert!(!path.exists());
+    }
+
+    // --- Send ack protocol ---
+
+    #[test]
+    fn parse_send_ack_success() {
+        let json = r#"{"ack_id":"ack_123","success":true}"#;
+        let ack: SendAck = serde_json::from_str(json).unwrap();
+        assert_eq!(ack.ack_id, "ack_123");
+        assert!(ack.success);
+        assert!(ack.error.is_none());
+    }
+
+    #[test]
+    fn parse_send_ack_failure() {
+        let json = r#"{"ack_id":"ack_456","success":false,"error":"not connected"}"#;
+        let ack: SendAck = serde_json::from_str(json).unwrap();
+        assert!(!ack.success);
+        assert_eq!(ack.error.as_deref(), Some("not connected"));
     }
 }
