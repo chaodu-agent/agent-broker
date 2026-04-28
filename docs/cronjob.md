@@ -152,7 +152,7 @@ Add to your `config.toml`:
 usercron_path = "cronjob.toml"
 ```
 
-The path is relative to the working directory (or absolute). The scheduler starts watching immediately, even if the file doesn't exist yet.
+The path is relative to `$HOME` (e.g. `"cronjob.toml"` resolves to `$HOME/cronjob.toml`). Absolute paths are used as-is. The scheduler starts watching immediately, even if the file doesn't exist yet.
 
 ### Create `cronjob.toml`
 
@@ -200,7 +200,8 @@ Mount `cronjob.toml` on a PVC so it persists across pod restarts, and set `userc
 
 ```toml
 # config.toml
-usercron_path = "/data/cronjob.toml"
+# Relative to $HOME — resolves to $HOME/cronjob.toml
+usercron_path = "cronjob.toml"
 ```
 
 ## Behaviors

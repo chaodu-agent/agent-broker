@@ -227,7 +227,18 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Spawn cron scheduler (background task) — reuses shared adapters
-    let usercron_path = cfg.usercron_path.as_ref().map(std::path::PathBuf::from);
+    let usercron_path = cfg.usercron_path.as_ref().map(|p| {
+        let path = std::path::PathBuf::from(p);
+        if path.is_absolute() {
+            path
+        } else {
+            // Relative paths resolve from $HOME (e.g. "cronjob.toml" → "$HOME/cronjob.toml")
+            std::env::var("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default()
+                .join(path)
+        }
+    });
     let has_cron_work = !cfg.cronjobs.is_empty() || usercron_path.is_some();
     let cron_handle = if has_cron_work {
         let shutdown_rx = shutdown_rx.clone();
