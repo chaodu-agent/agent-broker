@@ -164,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
     let mut configured_platforms: Vec<&str> = Vec::new();
     if cfg.discord.is_some() { configured_platforms.push("discord"); }
     if cfg.slack.is_some() { configured_platforms.push("slack"); }
-    cron::validate_cronjobs(&cfg.cronjobs, &configured_platforms)?;
+    cron::validate_cronjobs(&cfg.cron.jobs, &configured_platforms)?;
 
     // Spawn Slack adapter (background task)
     let slack_handle = if let Some(slack_cfg) = cfg.slack {
@@ -243,10 +243,10 @@ async fn main() -> anyhow::Result<()> {
     } else {
         None
     };
-    let has_cron_work = !cfg.cronjobs.is_empty() || usercron_path.is_some();
+    let has_cron_work = !cfg.cron.jobs.is_empty() || usercron_path.is_some();
     let cron_handle = if has_cron_work {
         let shutdown_rx = shutdown_rx.clone();
-        let cronjobs = cfg.cronjobs.clone();
+        let cronjobs = cfg.cron.jobs.clone();
         let cron_router = router.clone();
         let mut cron_adapters: std::collections::HashMap<String, Arc<dyn adapter::ChatAdapter>> =
             std::collections::HashMap::new();

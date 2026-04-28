@@ -4,7 +4,7 @@ Send recurring prompts to your agent on a schedule — daily summaries, weekly r
 
 ## How It Works
 
-1. Define `[[cronjobs]]` entries in `config.toml`
+1. Define `[[cron.jobs]]` entries in `config.toml`
 2. OpenAB's internal scheduler evaluates cron expressions once per minute
 3. When a schedule matches, the message is sent to the agent as if a user typed it
 4. The agent processes the message and replies to the target channel
@@ -16,7 +16,7 @@ No external scheduler (K8s CronJob, GitHub Actions) is needed for simple use cas
 Add to your `config.toml`:
 
 ```toml
-[[cronjobs]]
+[[cron.jobs]]
 schedule = "0 9 * * 1-5"
 channel = "123456789012345678"
 message = "summarize yesterday's merged PRs"
@@ -26,10 +26,10 @@ This sends `summarize yesterday's merged PRs` to the agent every weekday at 09:0
 
 ## Configuration
 
-Each `[[cronjobs]]` entry supports these fields:
+Each `[[cron.jobs]]` entry supports these fields:
 
 ```toml
-[[cronjobs]]
+[[cron.jobs]]
 enabled = true                               # optional, default: true
 schedule = "0 9 * * 1-5"                    # required: cron expression
 channel = "123456789012345678"               # required: target channel ID
@@ -80,7 +80,7 @@ Standard 5-field POSIX cron, same as Linux crontab, K8s CronJob, and GitHub Acti
 By default, schedules are evaluated in UTC. Set `timezone` to any IANA timezone:
 
 ```toml
-[[cronjobs]]
+[[cron.jobs]]
 schedule = "0 9 * * 1-5"
 channel = "123456789012345678"
 message = "good morning team, here's today's agenda"
@@ -91,23 +91,23 @@ This fires at 09:00 New York time (13:00 or 14:00 UTC depending on DST).
 
 ## Multiple Jobs
 
-Define as many `[[cronjobs]]` entries as you need:
+Define as many `[[cron.jobs]]` entries as you need:
 
 ```toml
-[[cronjobs]]
+[[cron.jobs]]
 schedule = "0 9 * * 1-5"
 channel = "123456789012345678"
 message = "summarize yesterday's merged PRs"
 sender_name = "DailyOps"
 timezone = "America/New_York"
 
-[[cronjobs]]
+[[cron.jobs]]
 schedule = "0 0 * * 0"
 channel = "123456789012345678"
 message = "generate weekly status report"
 sender_name = "WeeklyReport"
 
-[[cronjobs]]
+[[cron.jobs]]
 schedule = "0 18 * * 1-5"
 channel = "C0123456789"
 message = "check for any critical alerts in the last 8 hours"
@@ -172,16 +172,16 @@ usercron_enabled = true
 usercron_path = "cronjob.toml"    # → $HOME/cronjob.toml
 ```
 
-> Note: `usercron_enabled` and `usercron_path` live under the `[cron]` section. `[[cronjobs]]` remains a separate top-level array for baseline jobs.
+> Note: Everything cron-related lives under `[cron]` — both usercron settings and baseline `[[cron.jobs]]`.
 
 The path is relative to `$HOME` (e.g. `"cronjob.toml"` resolves to `$HOME/cronjob.toml`). Absolute paths are used as-is. The scheduler starts watching immediately, even if the file doesn't exist yet.
 
 ### Create `cronjob.toml`
 
-Same `[[cronjobs]]` format as `config.toml`:
+Same format as `[[cron.jobs]]` in config.toml, but uses `[[jobs]]`:
 
 ```toml
-[[cronjobs]]
+[[jobs]]
 schedule = "* * * * *"
 channel = "1490282656913559673"
 message = "ping"
@@ -189,7 +189,7 @@ platform = "discord"
 sender_name = "usercron"
 timezone = "Asia/Taipei"
 
-[[cronjobs]]
+[[jobs]]
 schedule = "0 9 * * 1-5"
 channel = "1490282656913559673"
 message = "summarize yesterday's merged PRs"
@@ -202,13 +202,13 @@ timezone = "Asia/Taipei"
 ```
                          config.toml                        $HOME/cronjob.toml
                     ┌──────────────────┐                 ┌──────────────────────┐
-                    │ [cron]           │                 │ [[cronjobs]]         │
+                    │ [cron]           │                 │ [[jobs]]             │
                     │ usercron_enabled │                 │ schedule = "* * * *" │
                     │   = true         │                 │ channel  = "123..."  │
                     │ usercron_path    │                 │ message  = "ping"    │
                     │   = "cronjob.toml│"                └──────────┬───────────┘
                     │                  │                            │
-                    │ [[cronjobs]]     │                   Agent writes here
+                    │ [[cron.jobs]]    │                   Agent writes here
                     │ (baseline jobs)  │                   anytime (mobile/CLI)
                     └────────┬─────────┘                           │
                              │                                     │
@@ -231,7 +231,7 @@ timezone = "Asia/Taipei"
 
 1. Every scheduler tick (~1 minute), the file's modification time is checked
 2. If the file changed → re-parse and replace the dynamic job list
-3. `config.toml` cronjobs are the **immutable baseline**; `cronjob.toml` jobs are the **dynamic overlay**
+3. `config.toml` `[[cron.jobs]]` are the **immutable baseline**; `cronjob.toml` jobs are the **dynamic overlay**
 4. Invalid TOML or bad entries are logged and skipped — baseline jobs are never affected
 5. Deleting the file removes all dynamic jobs (baseline jobs continue)
 

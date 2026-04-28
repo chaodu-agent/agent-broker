@@ -61,11 +61,11 @@ pub fn validate_cronjobs(cronjobs: &[CronJobConfig], configured_platforms: &[&st
 // Usercron hot-reload
 // ---------------------------------------------------------------------------
 
-/// Wrapper for deserializing cronjob.toml which contains `[[cronjobs]]`.
+/// Wrapper for deserializing cronjob.toml which contains `[[jobs]]`.
 #[derive(serde::Deserialize)]
 struct UsercronFile {
     #[serde(default)]
-    cronjobs: Vec<CronJobConfig>,
+    jobs: Vec<CronJobConfig>,
 }
 
 /// Load and validate cronjobs from an external TOML file.
@@ -88,7 +88,7 @@ pub fn load_usercron_file(path: &Path, configured_platforms: &[&str]) -> Vec<Cro
         }
     };
     // Validate each entry individually — keep valid ones, skip bad ones
-    parsed.cronjobs.into_iter().enumerate().filter(|(i, job)| {
+    parsed.jobs.into_iter().enumerate().filter(|(i, job)| {
         if let Err(e) = parse_cron_expr(&job.schedule) {
             warn!(index = i, schedule = %job.schedule, error = %e, "usercron: invalid cron expression, skipping");
             return false;
@@ -436,13 +436,13 @@ mod tests {
     #[test]
     fn cronjob_config_defaults() {
         let toml_str = r#"
-[[cronjobs]]
+[[jobs]]
 schedule = "0 9 * * 1-5"
 channel = "123"
 message = "hello"
 "#;
         let cfg: UsercronFile = toml::from_str(toml_str).unwrap();
-        let job = &cfg.cronjobs[0];
+        let job = &cfg.jobs[0];
         assert_eq!(job.enabled, true);
         assert_eq!(job.platform, "discord");
         assert_eq!(job.sender_name, "openab-cron");
@@ -453,20 +453,20 @@ message = "hello"
     #[test]
     fn cronjob_config_disabled() {
         let toml_str = r#"
-[[cronjobs]]
+[[jobs]]
 enabled = false
 schedule = "0 9 * * 1-5"
 channel = "123"
 message = "hello"
 "#;
         let cfg: UsercronFile = toml::from_str(toml_str).unwrap();
-        assert_eq!(cfg.cronjobs[0].enabled, false);
+        assert_eq!(cfg.jobs[0].enabled, false);
     }
 
     #[test]
     fn cronjob_config_custom_values() {
         let toml_str = r#"
-[[cronjobs]]
+[[jobs]]
 schedule = "0 18 * * 1-5"
 channel = "456"
 message = "report"
@@ -476,7 +476,7 @@ timezone = "Asia/Taipei"
 thread_id = "789"
 "#;
         let cfg: UsercronFile = toml::from_str(toml_str).unwrap();
-        let job = &cfg.cronjobs[0];
+        let job = &cfg.jobs[0];
         assert_eq!(job.platform, "slack");
         assert_eq!(job.sender_name, "DailyOps");
         assert_eq!(job.timezone, "Asia/Taipei");
@@ -494,7 +494,7 @@ thread_id = "789"
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cronjob.toml");
         std::fs::write(&path, r#"
-[[cronjobs]]
+[[jobs]]
 schedule = "* * * * *"
 channel = "123"
 message = "ping"
@@ -518,12 +518,12 @@ message = "ping"
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cronjob.toml");
         std::fs::write(&path, r#"
-[[cronjobs]]
+[[jobs]]
 schedule = "* * * * *"
 channel = "123"
 message = "good"
 
-[[cronjobs]]
+[[jobs]]
 schedule = "bad cron"
 channel = "456"
 message = "bad"
@@ -538,12 +538,12 @@ message = "bad"
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cronjob.toml");
         std::fs::write(&path, r#"
-[[cronjobs]]
+[[jobs]]
 schedule = "* * * * *"
 channel = "123"
 message = "discord job"
 
-[[cronjobs]]
+[[jobs]]
 schedule = "* * * * *"
 channel = "456"
 message = "slack job"
