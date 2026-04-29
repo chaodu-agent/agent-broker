@@ -554,4 +554,134 @@ platform = "slack"
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].message, "discord job");
     }
+
+    // --- validate_cronjobs tests ---
+
+    #[test]
+    fn validate_cronjobs_valid_passes() {
+        let jobs = vec![CronJobConfig {
+            enabled: true, schedule: "0 9 * * 1-5".into(), channel: "123".into(),
+            message: "hi".into(), platform: "discord".into(), sender_name: "test".into(),
+            thread_id: None, timezone: "UTC".into(),
+        }];
+        assert!(validate_cronjobs(&jobs, &["discord"]).is_ok());
+    }
+
+    #[test]
+    fn validate_cronjobs_invalid_cron_fails() {
+        let jobs = vec![CronJobConfig {
+            enabled: true, schedule: "bad".into(), channel: "123".into(),
+            message: "hi".into(), platform: "discord".into(), sender_name: "test".into(),
+            thread_id: None, timezone: "UTC".into(),
+        }];
+        let err = validate_cronjobs(&jobs, &["discord"]).unwrap_err();
+        assert!(err.to_string().contains("invalid cron expression"));
+    }
+
+    #[test]
+    fn validate_cronjobs_invalid_timezone_fails() {
+        let jobs = vec![CronJobConfig {
+            enabled: true, schedule: "* * * * *".into(), channel: "123".into(),
+            message: "hi".into(), platform: "discord".into(), sender_name: "test".into(),
+            thread_id: None, timezone: "Mars/Olympus".into(),
+        }];
+        let err = validate_cronjobs(&jobs, &["discord"]).unwrap_err();
+        assert!(err.to_string().contains("invalid timezone"));
+    }
+
+    #[test]
+    fn validate_cronjobs_unknown_platform_fails() {
+        let jobs = vec![CronJobConfig {
+            enabled: true, schedule: "* * * * *".into(), channel: "123".into(),
+            message: "hi".into(), platform: "telegram".into(), sender_name: "test".into(),
+            thread_id: None, timezone: "UTC".into(),
+        }];
+        let err = validate_cronjobs(&jobs, &["discord"]).unwrap_err();
+        assert!(err.to_string().contains("unknown platform"));
+    }
+
+    #[test]
+    fn validate_cronjobs_unconfigured_platform_fails() {
+        let jobs = vec![CronJobConfig {
+            enabled: true, schedule: "* * * * *".into(), channel: "123".into(),
+            message: "hi".into(), platform: "slack".into(), sender_name: "test".into(),
+            thread_id: None, timezone: "UTC".into(),
+        }];
+        let err = validate_cronjobs(&jobs, &["discord"]).unwrap_err();
+        assert!(err.to_string().contains("not configured"));
+    }
+
+    // --- file_mtime tests ---
+
+    #[test]
+    fn file_mtime_detects_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.toml");
+        assert!(file_mtime(&path).is_none()); // doesn't exist yet
+        std::fs::write(&path, "v1").unwrap();
+        let m1 = file_mtime(&path);
+        assert!(m1.is_some());
+        // Sleep briefly to ensure mtime differs
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(&path, "v2").unwrap();
+        let m2 = file_mtime(&path);
+        assert!(m2.is_some());
+        assert!(m2 != m1);
+    }
+
+    // --- CronConfig TOML deserialization ---
+
+    #[test]
+    fn cron_config_toml_parses() {
+        use crate::config::Config;
+        let toml_str = r#"
+[agent]
+command = "echo"
+
+[cron]
+usercron_enabled = true
+usercron_path = "cronjob.toml"
+
+[[cron.jobs]]
+schedule = "0 9 * * 1-5"
+channel = "123"
+message = "hello"
+
+[[cron.jobs]]
+schedule = "*/30 * * * *"
+channel = "456"
+message = "ping"
+platform = "slack"
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert!(cfg.cron.usercron_enabled);
+        assert_eq!(cfg.cron.usercron_path.as_deref(), Some("cronjob.toml"));
+        assert_eq!(cfg.cron.jobs.len(), 2);
+        assert_eq!(cfg.cron.jobs[0].message, "hello");
+        assert_eq!(cfg.cron.jobs[1].platform, "slack");
+    }
+
+    #[test]
+    fn cron_config_defaults_when_omitted() {
+        use crate::config::Config;
+        let toml_str = r#"
+[agent]
+command = "echo"
+"#;
+        let cfg: Config = toml::from_str(toml_str).unwrap();
+        assert!(!cfg.cron.usercron_enabled);
+        assert!(cfg.cron.usercron_path.is_none());
+        assert!(cfg.cron.jobs.is_empty());
+    }
+
+    // --- load_usercron empty file ---
+
+    #[test]
+    fn load_usercron_empty_file_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cronjob.toml");
+        std::fs::write(&path, "").unwrap();
+        let jobs = load_usercron_file(&path, &["discord"]);
+        assert!(jobs.is_empty());
+    }
 }
