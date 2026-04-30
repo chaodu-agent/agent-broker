@@ -72,16 +72,26 @@ Use **`thread_id`** as the target. Fall back to `channel_id` if `thread_id` is a
 
 ### 2. Get the Bot Token
 
-The agent needs the Discord Bot Token to call the API. Two common approaches:
+The agent needs a Discord Bot Token to call the API. Pass it via `[agent] env` in `config.toml`:
 
-- **Environment variable** — If `DISCORD_BOT_TOKEN` is set as a system-level env var (e.g. via Kubernetes Secret, Docker `-e`, or shell export), the agent subprocess inherits it automatically.
-- **Explicit config** — Pass it to the agent via `[agent] env` in `config.toml`:
-  ```toml
-  [agent]
-  env = { DISCORD_BOT_TOKEN = "${DISCORD_BOT_TOKEN}" }
-  ```
+```toml
+[agent]
+env = { DISCORD_BOT_TOKEN = "${DISCORD_BOT_TOKEN}" }
+```
 
-> ⚠️ The token in `[discord] bot_token` is consumed by OpenAB itself and is **not** automatically forwarded to the agent subprocess.
+> ⚠️ The token in `[discord] bot_token` is consumed by OpenAB itself and is **not** automatically forwarded to the agent subprocess. You must explicitly pass it via `[agent] env`.
+
+#### Security: dedicated bot recommended
+
+For production, consider using a **separate bot token** with minimal permissions instead of sharing the main OAB bot token. See [sendimages.md — Security: dedicated bot recommended](sendimages.md#security-dedicated-bot-recommended) for the full comparison table.
+
+```toml
+# Production: dedicated file-upload bot
+[agent]
+env = { DISCORD_FILE_BOT_TOKEN = "${DISCORD_FILE_BOT_TOKEN}" }
+```
+
+For personal use or small teams, sharing the same token is fine — you already trust your agent.
 
 ### 3. Upload the File
 
