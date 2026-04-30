@@ -292,6 +292,22 @@ impl SessionPool {
         Ok(())
     }
 
+    /// Reset a session: remove the active connection and clear suspended state.
+    /// The next message will trigger a fresh `get_or_create` with a new ACP session.
+    pub async fn reset_session(&self, thread_id: &str) -> Result<()> {
+        let mut state = self.state.write().await;
+        let had_active = state.active.remove(thread_id).is_some();
+        state.cancel_handles.remove(thread_id);
+        state.suspended.remove(thread_id);
+        state.creating.remove(thread_id);
+        if had_active {
+            info!(thread_id, "session reset");
+            Ok(())
+        } else {
+            Err(anyhow!("no session for thread {thread_id}"))
+        }
+    }
+
     pub async fn cleanup_idle(&self, ttl_secs: u64) {
         let cutoff = Instant::now() - std::time::Duration::from_secs(ttl_secs);
 
