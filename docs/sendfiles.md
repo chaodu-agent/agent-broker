@@ -1,5 +1,16 @@
 # Sending Files Back to Discord
 
+> **This doc is designed for your coding agent.** Share it with your agent so it learns how to send files back to Discord.
+>
+> Example prompt:
+> ```
+> Read docs/sendfiles.md and send the report file back to my Discord thread.
+> ```
+>
+> 💡 **Tip:** If it works the first time, ask your agent to save this as a **SKILL** so it remembers how to do it next time without re-reading the doc.
+
+---
+
 OpenAB streams text only — it does **not** relay file attachments from the agent.
 To send a file back to the user, the agent must call the Discord API directly.
 
