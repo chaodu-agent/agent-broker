@@ -83,10 +83,10 @@ env = { DISCORD_BOT_TOKEN = "${DISCORD_BOT_TOKEN}" }
 
 #### Security: dedicated bot recommended
 
-For production, consider using a **separate bot token** with minimal permissions instead of sharing the main OAB bot token. See [sendimages.md — Security: dedicated bot recommended](sendimages.md#security-dedicated-bot-recommended) for the full comparison table.
+For production, consider creating a **dedicated "File Deliverer" bot** with minimal permissions instead of sharing the main OAB bot token. See [sendimages.md — Security: dedicated bot recommended](sendimages.md#security-dedicated-bot-recommended) for the full architecture diagram and comparison table.
 
 ```toml
-# Production: dedicated file-upload bot
+# Production: dedicated file-upload bot (e.g. "File Deliverer")
 [agent]
 env = { DISCORD_FILE_BOT_TOKEN = "${DISCORD_FILE_BOT_TOKEN}" }
 ```

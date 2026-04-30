@@ -65,7 +65,39 @@ env = { DISCORD_BOT_TOKEN = "${DISCORD_BOT_TOKEN}" }
 
 #### Security: dedicated bot recommended
 
-For production, consider using a **separate bot token** with minimal permissions instead of sharing the main OAB bot token:
+For production, consider creating a **dedicated "File Deliverer" bot** with minimal permissions instead of sharing the main OAB bot token:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Discord Server                                                  │
+│                                                                 │
+│  ┌─────────────────┐         ┌──────────────────────────────┐   │
+│  │  OAB Bot         │         │  File Deliverer Bot          │   │
+│  │  (main bot)      │         │  (dedicated, minimal perms)  │   │
+│  │                  │         │                              │   │
+│  │  ✅ Read Messages │         │  ✅ Send Messages             │   │
+│  │  ✅ Manage Threads│         │  ✅ Send Messages in Threads  │   │
+│  │  ✅ Add Reactions │         │  ✅ Attach Files              │   │
+│  │  ✅ Send Messages │         │  ❌ Read Messages             │   │
+│  │  ✅ Attach Files  │         │  ❌ Manage Threads            │   │
+│  └────────┬────────┘         └──────────────┬───────────────┘   │
+│           │                                  │                   │
+│           │  ACP stdio                       │  REST API         │
+│           ▼                                  ▼                   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  Agent (kiro-cli / claude / codex)                        │   │
+│  │                                                           │   │
+│  │  DISCORD_FILE_BOT_TOKEN ──► POST /channels/{id}/messages  │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**What users see in the thread:**
+
+```
+超渡法師:        好的，我幫你生成報告...
+File Deliverer:  📎 report.pdf
+```
 
 | | Same token (simple) | Dedicated bot (recommended) |
 |---|---|---|
@@ -75,7 +107,7 @@ For production, consider using a **separate bot token** with minimal permissions
 | Audit trail | Cannot distinguish OAB vs agent messages | Separate bot identity in logs |
 
 ```toml
-# Production: dedicated file-upload bot
+# Production: dedicated file-upload bot (e.g. "File Deliverer")
 [agent]
 env = { DISCORD_FILE_BOT_TOKEN = "${DISCORD_FILE_BOT_TOKEN}" }
 ```
