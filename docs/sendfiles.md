@@ -4,7 +4,7 @@
 >
 > Example prompt:
 > ```
-> Read docs/sendfiles.md and send the report file back to my Discord thread.
+> Read docs/sendfiles.md from OpenAB GitHub and send the file back to my Discord thread.
 > ```
 >
 > 💡 **Tip:** If it works the first time, ask your agent to save this as a **SKILL** so it remembers how to do it next time without re-reading the doc.

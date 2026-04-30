@@ -4,7 +4,7 @@
 >
 > Example prompt:
 > ```
-> Read docs/sendimages.md and send the generated image back to my Discord thread.
+> Read docs/sendimages.md from OpenAB GitHub and send the image back to my Discord thread.
 > ```
 >
 > 💡 **Tip:** If it works the first time, ask your agent to save this as a **SKILL** so it remembers how to do it next time without re-reading the doc.
