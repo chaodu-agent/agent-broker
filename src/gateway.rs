@@ -263,6 +263,10 @@ pub async fn run_gateway_adapter(
     platform_name: String,
     ws_token: Option<String>,
     bot_username: Option<String>,
+    allow_all_channels: bool,
+    allowed_channels: Vec<String>,
+    allow_all_users: bool,
+    allowed_users: Vec<String>,
     router: Arc<AdapterRouter>,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
@@ -336,6 +340,18 @@ pub async fn run_gateway_adapter(
                                 Ok(event) => {
                                     if event.sender.is_bot {
                                         continue; // skip bot messages
+                                    }
+
+                                    // Channel allowlist gate
+                                    if !allow_all_channels && !allowed_channels.contains(&event.channel.id) {
+                                        info!(channel = %event.channel.id, "gateway: channel not in allowed_channels, skipping");
+                                        continue;
+                                    }
+
+                                    // User allowlist gate
+                                    if !allow_all_users && !allowed_users.contains(&event.sender.id) {
+                                        info!(sender = %event.sender.id, "gateway: user not in allowed_users, skipping");
+                                        continue;
                                     }
 
                                     // @mention gating: in groups, only respond if bot is mentioned

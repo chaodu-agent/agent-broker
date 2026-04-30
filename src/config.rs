@@ -188,6 +188,16 @@ pub struct GatewayConfig {
     pub token: Option<String>,
     /// Bot username for @mention gating in groups (e.g. "my_bot")
     pub bot_username: Option<String>,
+    /// Explicit flag: true = allow all channels, false = check allowed_channels list.
+    /// When not set, auto-detected: non-empty list → false, empty list → true.
+    pub allow_all_channels: Option<bool>,
+    /// Explicit flag: true = allow all users, false = check allowed_users list.
+    /// When not set, auto-detected: non-empty list → false, empty list → true.
+    pub allow_all_users: Option<bool>,
+    #[serde(default)]
+    pub allowed_channels: Vec<String>,
+    #[serde(default)]
+    pub allowed_users: Vec<String>,
 }
 
 fn default_gateway_platform() -> String {
