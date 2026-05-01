@@ -1,0 +1,30 @@
+name: Docs Required Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if docs update is required
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if echo "$PR_TITLE" | grep -qiE '^(fix|feat)(\(.+\))?:'; then
+            echo "This is a fix/feat PR, checking docs/ changes..."
+            DOCS_CHANGED=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD -- docs/ | wc -l)
+            if [ "$DOCS_CHANGED" -eq 0 ]; then
+              echo "::error::fix/feat PR 必須包含 docs/ 下的文件更新！"
+              exit 1
+            else
+              echo "✅ docs/ has $DOCS_CHANGED file(s) changed."
+            fi
+          else
+            echo "⏭️ Not a fix/feat PR, skipping docs check."
+          fi
