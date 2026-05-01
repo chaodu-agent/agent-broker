@@ -154,8 +154,36 @@ impl AcpConnection {
         {
             cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP
         }
+        // Clear inherited env to prevent credential leakage (e.g. DISCORD_BOT_TOKEN).
+        // Only [agent].env values + essential baseline vars are passed through.
+        cmd.env_clear();
+        // Preserve the real HOME so agents can find OAuth/auth files (~/.codex,
+        // ~/.claude, ~/.config/gh, etc.). working_dir is already set via
+        // current_dir() above and is not necessarily the user's home directory.
+        cmd.env("HOME", std::env::var("HOME").unwrap_or_else(|_| working_dir.into()));
+        cmd.env("PATH", std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into()));
+        #[cfg(unix)]
+        {
+            cmd.env("USER", std::env::var("USER").unwrap_or_else(|_| "agent".into()));
+        }
+        #[cfg(windows)]
+        {
+            // Windows requires SystemRoot for DLL loading and basic OS functionality.
+            // USERPROFILE is the Windows equivalent of HOME.
+            cmd.env("USERPROFILE", std::env::var("USERPROFILE").unwrap_or_else(|_| working_dir.into()));
+            cmd.env("USERNAME", std::env::var("USERNAME").unwrap_or_else(|_| "agent".into()));
+            if let Ok(v) = std::env::var("SystemRoot") { cmd.env("SystemRoot", v); }
+            if let Ok(v) = std::env::var("SystemDrive") { cmd.env("SystemDrive", v); }
+        }
         for (k, v) in env {
             cmd.env(k, expand_env(v));
+        }
+        if !env.is_empty() {
+            let keys: Vec<&String> = env.keys().collect();
+            tracing::warn!(
+                ?keys,
+                "[agent].env is set -- these values are accessible to the agent and could be exfiltrated via prompt injection"
+            );
         }
         let mut proc = cmd
             .spawn()
