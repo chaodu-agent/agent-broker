@@ -142,9 +142,6 @@ data:
     {{- end }}
     {{- end }}
     allowed_users = {{ ($cfg.gateway).allowedUsers | default list | toJson }}
-    {{- if ($cfg.gateway).botUsername }}
-    bot_username = {{ ($cfg.gateway).botUsername | toJson }}
-    {{- end }}
     {{- end }}
     {{- if or ($cfg.cronjobs) (($cfg.cron).usercronEnabled) (($cfg.cron).usercronPath) }}
 
