@@ -158,7 +158,7 @@ rollback openab per the upgrade SOP — the upgrade to v0.7.7 failed
   Step ①  Uninstall failed deployment
   ┌──────────┐
   │ helm     │──► release gone
-  │ uninstall│──► delete leftover PVC/secrets
+  │ uninstall│──► chart PVCs are retained
   └────┬─────┘
        ▼
   Step ②  Reinstall previous version
@@ -183,6 +183,10 @@ rollback openab per the upgrade SOP — the upgrade to v0.7.7 failed
   │ ✅ Rollback complete
   └──────────────────────────────────────────────
 ```
+
+> **PVC retention:** OpenAB chart-created PVCs are kept on `helm uninstall` to protect auth/session data. Delete a retained PVC manually only when you intentionally want to discard that state. `persistence.existingClaim` PVCs are owned outside the chart and are never created or deleted by OpenAB.
+>
+> **Upgrade path:** Existing installations will gain the `helm.sh/resource-policy: keep` annotation on their PVCs upon the next `helm upgrade`. This is an additive-only change — it does not alter runtime behavior and only takes effect on a subsequent `helm uninstall`.
 
 ---
 
