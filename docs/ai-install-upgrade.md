@@ -143,7 +143,7 @@ rollback openab per the upgrade SOP — the upgrade to v0.7.7 failed
   │    is still reachable and update values.yaml if  │
   │    the URL has rotated                           │
   │                                                  │
-  │  ALL PASS ──► ✅ DONE                             │
+  │  ALL PASS ──► proceed to 6. CLEANUP            │
   │  ANY FAIL ──► proceed to 5. ROLLBACK             │
   └─────────────────────────────────────────────────┘
 ```
