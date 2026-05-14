@@ -446,6 +446,41 @@ impl AcpConnection {
             load_session = self.supports_load_session,
             "initialized"
         );
+
+        // If the agent requires authentication (e.g. Grok Build), handle it
+        if let Some(auth_methods) = result.and_then(|r| r.get("authMethods")) {
+            self.authenticate(auth_methods).await?;
+        }
+        Ok(())
+    }
+
+    async fn authenticate(&mut self, auth_methods: &Value) -> Result<()> {
+        let methods: Vec<&str> = auth_methods
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Prefer API key auth, fall back to cached token
+        let method_id = if methods.contains(&"xai.api_key") {
+            "xai.api_key"
+        } else if methods.contains(&"cached_token") {
+            "cached_token"
+        } else {
+            return Err(anyhow!("no supported auth method (available: {methods:?})"));
+        };
+
+        info!(method = method_id, "authenticating");
+        let resp = self.send_request(
+            "authenticate",
+            Some(json!({"methodId": method_id, "meta": {"headless": true}})),
+        )
+        .await?;
+        debug!(result = ?resp.result, "authenticate response");
+        info!("authenticated");
         Ok(())
     }
 
