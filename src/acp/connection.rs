@@ -74,6 +74,25 @@ fn build_permission_response(params: Option<&Value>) -> Value {
     }
 }
 
+fn select_auth_method(auth_methods: &Value) -> Result<&'static str> {
+    let methods: Vec<&str> = auth_methods
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if methods.contains(&"xai.api_key") && std::env::var_os("GROK_CODE_XAI_API_KEY").is_some() {
+        return Ok("xai.api_key");
+    }
+    if methods.contains(&"cached_token") {
+        return Ok("cached_token");
+    }
+    Err(anyhow!("no supported auth method (available: {methods:?})"))
+}
+
 fn expand_env(val: &str) -> String {
     if val.starts_with("${") && val.ends_with('}') {
         let key = &val[2..val.len() - 1];
@@ -455,30 +474,15 @@ impl AcpConnection {
     }
 
     async fn authenticate(&mut self, auth_methods: &Value) -> Result<()> {
-        let methods: Vec<&str> = auth_methods
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Prefer API key auth, fall back to cached token
-        let method_id = if methods.contains(&"xai.api_key") {
-            "xai.api_key"
-        } else if methods.contains(&"cached_token") {
-            "cached_token"
-        } else {
-            return Err(anyhow!("no supported auth method (available: {methods:?})"));
-        };
+        let method_id = select_auth_method(auth_methods)?;
 
         info!(method = method_id, "authenticating");
-        let resp = self.send_request(
-            "authenticate",
-            Some(json!({"methodId": method_id, "meta": {"headless": true}})),
-        )
-        .await?;
+        let resp = self
+            .send_request(
+                "authenticate",
+                Some(json!({"methodId": method_id, "_meta": {"headless": true}})),
+            )
+            .await?;
         debug!(result = ?resp.result, "authenticate response");
         info!("authenticated");
         Ok(())
@@ -698,8 +702,13 @@ impl Drop for AcpConnection {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_agent_env, build_permission_response, pick_best_option};
+    use super::{
+        build_agent_env, build_permission_response, pick_best_option, select_auth_method,
+    };
     use serde_json::json;
+    use std::sync::Mutex;
+
+    static GROK_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn picks_allow_always_over_other_options() {
@@ -790,6 +799,43 @@ mod tests {
             response,
             json!({"outcome": {"outcome": "selected", "optionId": "allow_always"}})
         );
+    }
+
+    #[test]
+    fn auth_method_prefers_api_key_when_env_is_set() {
+        let _guard = GROK_ENV_LOCK.lock().unwrap();
+        std::env::set_var("GROK_CODE_XAI_API_KEY", "test-key");
+        let methods = json!([
+            {"id": "cached_token"},
+            {"id": "xai.api_key"}
+        ]);
+
+        assert_eq!(select_auth_method(&methods).unwrap(), "xai.api_key");
+        std::env::remove_var("GROK_CODE_XAI_API_KEY");
+    }
+
+    #[test]
+    fn auth_method_uses_cached_token_when_api_key_env_is_absent() {
+        let _guard = GROK_ENV_LOCK.lock().unwrap();
+        std::env::remove_var("GROK_CODE_XAI_API_KEY");
+        let methods = json!([
+            {"id": "xai.api_key"},
+            {"id": "cached_token"}
+        ]);
+
+        assert_eq!(select_auth_method(&methods).unwrap(), "cached_token");
+    }
+
+    #[test]
+    fn auth_method_errors_when_no_usable_method_exists() {
+        let _guard = GROK_ENV_LOCK.lock().unwrap();
+        std::env::remove_var("GROK_CODE_XAI_API_KEY");
+        let methods = json!([
+            {"id": "xai.api_key"},
+            {"id": "unsupported"}
+        ]);
+
+        assert!(select_auth_method(&methods).is_err());
     }
 
     #[test]
